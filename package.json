@@ -1,0 +1,52 @@
+{
+  "name": "feonixai-desktop",
+  "version": "0.2.0",
+  "private": true,
+  "description": "FeonixAI desktop shell — a thin Electron wrapper around the FeonixAI web app.",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.feonixai.desktop",
+    "productName": "FeonixAI",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "protocols": [
+      {
+        "name": "FeonixAI Handoff",
+        "schemes": ["feonixai"]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "artifactName": "FeonixAI Setup ${version}.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "FeonixAI Setup ${version}.exe"
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "category": "public.app-category.productivity",
+      "artifactName": "FeonixAI-${version}.${ext}"
+    },
+    "dmg": {
+      "artifactName": "FeonixAI-${version}.dmg"
+    }
+  }
+}
