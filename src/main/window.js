@@ -36,13 +36,15 @@ function isTrustedUrl(url) {
 // regardless of the foreground-lock, which is the standard workaround for
 // this on Windows; turning it back off immediately afterward leaves the
 // window in a normal (non-pinned) state once it's actually in front.
-function bringToFront(win) {
+function bringToFront(win, keepAlwaysOnTop = false) {
   if (!win || win.isDestroyed()) return;
   if (win.isMinimized()) win.restore();
   win.show();
   win.setAlwaysOnTop(true);
   win.focus();
-  win.setAlwaysOnTop(false);
+  if (!keepAlwaysOnTop) {
+    win.setAlwaysOnTop(false);
+  }
 }
 
 function hardenWindow(win) {
@@ -67,10 +69,10 @@ function createMainWindow(routePath) {
   }
 
   mainWindow = new BrowserWindow({
-    width: 1000,
-    height: 720,
-    minWidth: 760,
-    minHeight: 560,
+    width: 760,
+    height: 600,
+    minWidth: 640,
+    minHeight: 480,
     frame: false,
     backgroundColor: '#0b0f14',
     webPreferences: {
@@ -94,24 +96,29 @@ function createMainWindow(routePath) {
 }
 
 function createOverlayWindow(routePath, settingsStore) {
+  const alwaysOnTop = settingsStore ? Boolean(settingsStore.get('alwaysOnTop')) : true;
+
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.loadURL(`${WEB_URL}${routePath}`);
-    bringToFront(overlayWindow);
+    bringToFront(overlayWindow, alwaysOnTop);
     return overlayWindow;
   }
 
-  const alwaysOnTop = settingsStore ? Boolean(settingsStore.get('alwaysOnTop')) : true;
-
   overlayWindow = new BrowserWindow({
-    width: 640,
-    height: 360,
+    // 640 was narrower than the topbar's button row actually needs (Start
+    // Recording + Answer + Screenshot + Chat on the left, drag/expand/
+    // minimize/Hide/settings/End on the right) — it fit only by clipping
+    // whichever button ran past the edge, End Interview most often, since
+    // .pk-shell clips overflow rather than shrinking it.
+    width: 960,
+    height: 380,
     minWidth: 360,
     minHeight: 200,
     frame: false,
     transparent: true,
     alwaysOnTop,
     resizable: true,
-    skipTaskbar: true,
+    skipTaskbar: false,
     hasShadow: false,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
@@ -123,16 +130,36 @@ function createOverlayWindow(routePath, settingsStore) {
   });
 
   hardenWindow(overlayWindow);
-  if (alwaysOnTop) overlayWindow.setAlwaysOnTop(true, 'screen-saver');
-  // No setContentProtection here, deliberately: this overlay must be visible
-  // to whatever the user shares — see the removed 'feonix:set-private'
-  // handler (and the Privacy & Security status in ipc.js) for why hiding it
-  // from screen capture was taken out, and stays out.
+  if (alwaysOnTop) {
+    if (process.platform === 'darwin') {
+      overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+    } else {
+      overlayWindow.setAlwaysOnTop(true);
+    }
+  }
+
   overlayWindow.webContents.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL) => {
     console.error('overlay failed to load:', errorCode, errorDescription, validatedURL);
   });
+  // bringToFront's win.focus() below fires immediately after loadURL(), i.e.
+  // before the page (and its Ctrl+V paste listener) actually exists yet.
+  // That's enough to visually raise the window, but keyboard focus doesn't
+  // reliably stick to a still-loading page — most noticeable right after
+  // using an external screenshot tool, whose own window can still hold OS
+  // input focus until something explicitly re-claims it. Re-asserting focus
+  // once the page has actually finished loading closes that gap; this
+  // listener stays registered for the window's life, so it also re-fires on
+  // every reused-window navigation below, not just this first creation.
+  overlayWindow.webContents.on('did-finish-load', () => {
+    // Re-read rather than close over `alwaysOnTop` — this listener stays
+    // attached across reused-window navigations, where the setting may have
+    // changed since this window was first created.
+    const currentAlwaysOnTop = settingsStore ? Boolean(settingsStore.get('alwaysOnTop')) : alwaysOnTop;
+    bringToFront(overlayWindow, currentAlwaysOnTop);
+    overlayWindow.webContents.focus();
+  });
   overlayWindow.loadURL(`${WEB_URL}${routePath}`);
-  bringToFront(overlayWindow);
+  bringToFront(overlayWindow, alwaysOnTop);
 
   overlayWindow.on('closed', () => {
     overlayWindow = null;

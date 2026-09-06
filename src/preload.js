@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('feonix', {
   goToDashboard: () => ipcRenderer.send('feonix:dashboard'),
   minimize: () => ipcRenderer.send('feonix:minimize'),
   resize: (width, height) => ipcRenderer.send('feonix:resize', width, height),
+  moveBy: (dx, dy) => ipcRenderer.send('feonix:move-by', dx, dy),
   startSession: (opts) => ipcRenderer.invoke('feonix:start-session', opts),
   pendingHandoff: () => ipcRenderer.invoke('feonix:pending-handoff'),
   onHandoff: (callback) => {

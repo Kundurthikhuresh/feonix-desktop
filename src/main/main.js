@@ -2,12 +2,24 @@ const { app, BrowserWindow } = require('electron');
 const path = require('path');
 const { Logger } = require('../logger');
 const { SettingsStore } = require('./settingsStore');
-const { createMainWindow, getMainWindow, bringToFront } = require('./window');
+const { createMainWindow, getMainWindow, bringToFront, getOverlayWindow } = require('./window');
 const { registerIpcHandlers, applyLaunchAtStartup } = require('./ipc');
 const { createTray, destroyTray } = require('./tray');
 const { registerShortcuts, unregisterShortcuts } = require('./shortcuts');
 
 const SCHEME = process.env.DESKTOP_SCHEME || 'feonixai';
+
+// app.getName() defaults to package.json's "name" field ("feonixai-desktop",
+// needed for npm/electron-builder identity), not the "FeonixAI" the build
+// config's productName brands the installer/shortcuts with. Left unset, a
+// packaged install and a plain `electron .` dev run both resolved
+// app.getPath('userData') to the SAME %APPDATA%\feonixai-desktop — sharing
+// settings, cookies, and localStorage between two supposedly separate app
+// instances, including every drag position and visibility state a dev-mode
+// test run ever set. The dev suffix keeps that separation going forward,
+// not just the name correction: it needs to be set before anything below
+// reads getPath('userData').
+app.setName(app.isPackaged ? 'FeonixAI' : 'FeonixAI-dev');
 
 const logger = new Logger(path.join(app.getPath('userData'), 'logs'));
 const settingsStore = new SettingsStore(app.getPath('userData'));
@@ -23,8 +35,9 @@ let pendingHandoff = null;
 
 function parseDeepLink(url) {
   try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== `${SCHEME}:`) return null;
+    const cleanUrl = String(url).trim().replace(/^["']|["']$/g, '');
+    const parsed = new URL(cleanUrl);
+    if (parsed.protocol.toLowerCase() !== `${SCHEME.toLowerCase()}:`) return null;
     const token = parsed.searchParams.get('token');
     const sessionParam = parsed.searchParams.get('session');
     if (!token) return null;
@@ -35,19 +48,28 @@ function parseDeepLink(url) {
 }
 
 function deliverHandoff(handoff) {
+  if (!handoff) return;
+  pendingHandoff = handoff;
+
+  const sessionQuery = handoff.session ? `&session=${encodeURIComponent(handoff.session)}` : '';
+  const tokenQuery = handoff.token ? `token=${encodeURIComponent(handoff.token)}` : '';
+  const query = tokenQuery ? `?${tokenQuery}${sessionQuery}` : (sessionQuery ? `?${sessionQuery.slice(1)}` : '');
+  const routePath = `/session-type${query}`;
+
+  logger.info('deliverHandoff routing to:', routePath);
+
+  const overlayWindow = getOverlayWindow();
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.close();
+  }
+
   const mainWindow = getMainWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
-    // This runs from a background event (second-instance/open-url), not a
-    // click inside this process — plain show()/focus() here was the actual
-    // bug behind the desktop handoff silently doing nothing on Windows: the
-    // window existed and was even "visible", but the OS foreground-lock
-    // kept it behind the browser tab that triggered the deep link, so
-    // nothing the user could see ever changed. bringToFront forces past that.
+    mainWindow.loadURL(`${WEB_URL}${routePath}`);
     bringToFront(mainWindow);
     mainWindow.webContents.send('feonix:handoff', handoff);
   } else {
-    pendingHandoff = handoff;
-    createMainWindow('/session-type');
+    createMainWindow(routePath);
   }
 }
 
@@ -79,7 +101,8 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', (_event, argv) => {
-    const link = argv.find((arg) => arg.startsWith(`${SCHEME}://`));
+    const prefix = `${SCHEME.toLowerCase()}:`;
+    const link = argv.find((arg) => typeof arg === 'string' && arg.toLowerCase().startsWith(prefix));
     const handoff = link ? parseDeepLink(link) : null;
     if (handoff) {
       deliverHandoff(handoff);
@@ -102,11 +125,15 @@ if (!gotLock) {
     registerShortcuts(settingsStore);
 
     // Windows/Linux cold start via protocol link: the URL arrives as an argv entry.
-    const coldLink = process.argv.find((arg) => arg.startsWith(`${SCHEME}://`));
+    const prefix = `${SCHEME.toLowerCase()}:`;
+    const coldLink = process.argv.find((arg) => typeof arg === 'string' && arg.toLowerCase().startsWith(prefix));
     const coldHandoff = coldLink ? parseDeepLink(coldLink) : null;
 
-    if (coldHandoff) pendingHandoff = coldHandoff;
-    createMainWindow('/session-type');
+    if (coldHandoff) {
+      deliverHandoff(coldHandoff);
+    } else {
+      createMainWindow('/session-type');
+    }
   });
 }
 

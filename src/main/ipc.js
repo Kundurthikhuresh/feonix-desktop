@@ -32,8 +32,9 @@ function registerIpcHandlers({ logger, settingsStore, getPendingHandoff, clearPe
     const mainWindow = getMainWindow();
     if (win === overlayWindow) {
       overlayWindow.close();
-      if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
-        mainWindow.close();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
       }
     } else if (win) {
       win.close();
@@ -79,6 +80,21 @@ function registerIpcHandlers({ logger, settingsStore, getPendingHandoff, clearPe
     win.setSize(w, h);
   });
 
+  // The renderer's drag-to-move gesture (mousedown on the drag rail, track
+  // mousemove, mouseup to release) only ever updated a CSS position on the
+  // HUD's own content — that moves things around fine inside a browser tab,
+  // but a frameless, tightly-content-sized BrowserWindow has essentially no
+  // extra viewport to shift content *within*, so "drag it anywhere on the
+  // screen" looked like it wasn't moving at all. The gesture tracking stays
+  // in the renderer (it already knows down/move/up and click-vs-drag); this
+  // just forwards the per-frame delta to actually relocate the OS window.
+  ipcMain.on('feonix:move-by', (event, dx, dy) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || !Number.isFinite(dx) || !Number.isFinite(dy)) return;
+    const [x, y] = win.getPosition();
+    win.setPosition(Math.round(x + dx), Math.round(y + dy));
+  });
+
   ipcMain.handle('feonix:start-session', (_event, opts) => {
     try {
       const plan = KNOWN_PLANS.has(opts && opts.plan) ? opts.plan : 'full';
@@ -90,12 +106,13 @@ function registerIpcHandlers({ logger, settingsStore, getPendingHandoff, clearPe
       const sessionId = sessionIdRaw != null && /^\d+$/.test(String(sessionIdRaw)) ? String(sessionIdRaw) : '';
       const auto = Boolean(opts && opts.auto);
 
-      const startMinimized = settingsStore ? settingsStore.get('startMinimized') : false;
+      // When starting a session, always open the full HUD so the window is immediately visible!
+      const startParam = (opts && opts.start) || 'open';
       const query = new URLSearchParams({
-        plan, session: sessionId, auto: auto ? '1' : '0', start: startMinimized ? 'minimized' : 'open',
+        plan, session: sessionId, auto: auto ? '1' : '0', start: startParam,
       }).toString();
 
-      logger.info('feonix:start-session', { plan, sessionId, auto, startMinimized });
+      logger.info('feonix:start-session', { plan, sessionId, auto, start: startParam });
       const win = createOverlayWindow(`/overlay?${query}`, settingsStore);
       logger.info('overlay window created/reused', { id: win && win.id, destroyed: win && win.isDestroyed() });
       const mainWindow = getMainWindow();
