@@ -8,7 +8,7 @@ const WEB_URL = (process.env.FEONIX_WEB_URL || 'http://localhost:3000').replace(
 // DevTools are a debugging feature, not something a shipped build should
 // expose — they're a direct window into whatever the renderer is holding in
 // memory. Available in dev (`npm start`) and disabled in every packaged build.
-const DEV_TOOLS_ALLOWED = !app.isPackaged;
+const DEV_TOOLS_ALLOWED = app ? !app.isPackaged : true;
 
 let mainWindow = null;
 let overlayWindow = null;
@@ -42,6 +42,9 @@ function bringToFront(win, keepAlwaysOnTop = false) {
   win.show();
   win.setAlwaysOnTop(true);
   win.focus();
+  try {
+    win.setContentProtection(true);
+  } catch { /* best effort */ }
   if (!keepAlwaysOnTop) {
     win.setAlwaysOnTop(false);
   }
@@ -53,7 +56,7 @@ function hardenWindow(win) {
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (isTrustedUrl(url)) return { action: 'allow' };
-    if (/^https?:\/\//i.test(url)) shell.openExternal(url).catch(() => {});
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url).catch(() => { });
     return { action: 'deny' };
   });
   if (!DEV_TOOLS_ALLOWED) {
@@ -74,7 +77,7 @@ function createMainWindow(routePath) {
     minWidth: 640,
     minHeight: 480,
     frame: false,
-    backgroundColor: '#0b0f14',
+    backgroundColor: '#2C2C2C',
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload.js'),
       contextIsolation: true,
@@ -85,6 +88,12 @@ function createMainWindow(routePath) {
   });
 
   hardenWindow(mainWindow);
+  try {
+    mainWindow.setContentProtection(true);
+    console.log('🛡️ Screen share stealth enabled on mainWindow');
+  } catch (err) {
+    console.warn('Could not enable content protection on mainWindow:', err.message);
+  }
   mainWindow.loadURL(`${WEB_URL}${routePath}`);
   bringToFront(mainWindow);
 
@@ -101,6 +110,9 @@ function createOverlayWindow(routePath, settingsStore) {
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.loadURL(`${WEB_URL}${routePath}`);
     bringToFront(overlayWindow, alwaysOnTop);
+    try {
+      overlayWindow.setContentProtection(true);
+    } catch { }
     return overlayWindow;
   }
 
@@ -110,10 +122,10 @@ function createOverlayWindow(routePath, settingsStore) {
     // minimize/Hide/settings/End on the right) — it fit only by clipping
     // whichever button ran past the edge, End Interview most often, since
     // .pk-shell clips overflow rather than shrinking it.
-    width: 960,
+    width: 980,
     height: 380,
-    minWidth: 360,
-    minHeight: 200,
+    minWidth: 400,
+    minHeight: 180,
     frame: false,
     transparent: true,
     alwaysOnTop,
@@ -138,6 +150,27 @@ function createOverlayWindow(routePath, settingsStore) {
     }
   }
 
+  // Screen Share Invisibility (Anti-capture OS protection):
+  // Automatically hides the copilot overlay from:
+  // 1. WhatsApp (screen sharing)
+  // 2. Discord (screen/application sharing)
+  // 3. Cisco Webex (screen/application sharing)
+  // 4. Jitsi Meet (screen/window/tab sharing)
+  // 5. Slack Huddles (screen/window sharing)
+  // 6. Loom (screen/window/tab sharing)
+  // 7. GoTo Meeting (screen/application sharing)
+  // 8. Whereby (screen/window/tab sharing)
+  // 9. Google Meet, 10. Zoom, 11. Microsoft Teams, OBS, and OS screen recorders.
+  const stealthEnabled = settingsStore ? (settingsStore.get('stealthMode') !== false) : true;
+  if (stealthEnabled) {
+    try {
+      overlayWindow.setContentProtection(true);
+      console.log('🛡️ Screen share stealth enabled: overlayWindow.setContentProtection(true) across 11 platforms');
+    } catch (err) {
+      console.warn('Could not enable content protection on overlay window:', err.message);
+    }
+  }
+
   overlayWindow.webContents.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL) => {
     console.error('overlay failed to load:', errorCode, errorDescription, validatedURL);
   });
@@ -156,6 +189,9 @@ function createOverlayWindow(routePath, settingsStore) {
     // changed since this window was first created.
     const currentAlwaysOnTop = settingsStore ? Boolean(settingsStore.get('alwaysOnTop')) : alwaysOnTop;
     bringToFront(overlayWindow, currentAlwaysOnTop);
+    try {
+      overlayWindow.setContentProtection(true);
+    } catch { }
     overlayWindow.webContents.focus();
   });
   overlayWindow.loadURL(`${WEB_URL}${routePath}`);
@@ -166,6 +202,20 @@ function createOverlayWindow(routePath, settingsStore) {
   });
 
   return overlayWindow;
+}
+
+module.exports = {
+  WEB_URL,
+  DEV_TOOLS_ALLOWED,
+  hardenWindow,
+  isTrustedUrl,
+  bringToFront,
+  createMainWindow,
+  createOverlayWindow,
+  getMainWindow: () => mainWindow,
+  getOverlayWindow: () => overlayWindow,
+};
+return overlayWindow;
 }
 
 module.exports = {

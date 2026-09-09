@@ -45,7 +45,17 @@ function buildMenu({ onOpenSettings }) {
     {
       label: 'Show Assistant',
       enabled: hasWindow,
-      click: () => sendToOverlay('feonix:tray-show'),
+      click: () => {
+        if (win && !win.isDestroyed()) {
+          if (win.isMinimized()) win.restore();
+          win.show();
+          try {
+            const { bringToFront } = require('./window');
+            bringToFront(win);
+          } catch {}
+        }
+        sendToOverlay('feonix:tray-show');
+      },
     },
     {
       label: 'Minimize Assistant',

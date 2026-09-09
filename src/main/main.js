@@ -2,10 +2,11 @@ const { app, BrowserWindow } = require('electron');
 const path = require('path');
 const { Logger } = require('../logger');
 const { SettingsStore } = require('./settingsStore');
-const { createMainWindow, getMainWindow, bringToFront, getOverlayWindow } = require('./window');
+const { createMainWindow, getMainWindow, bringToFront, getOverlayWindow, WEB_URL } = require('./window');
 const { registerIpcHandlers, applyLaunchAtStartup } = require('./ipc');
 const { createTray, destroyTray } = require('./tray');
 const { registerShortcuts, unregisterShortcuts } = require('./shortcuts');
+const { initScreenShareDetector } = require('./screenShareDetector');
 
 const SCHEME = process.env.DESKTOP_SCHEME || 'feonixai';
 
@@ -123,6 +124,7 @@ if (!gotLock) {
     applyLaunchAtStartup(settingsStore.get('launchAtStartup'));
     if (settingsStore.get('showTrayIcon')) createTray({ onOpenSettings: () => {} });
     registerShortcuts(settingsStore);
+    initScreenShareDetector(settingsStore, logger);
 
     // Windows/Linux cold start via protocol link: the URL arrives as an argv entry.
     const prefix = `${SCHEME.toLowerCase()}:`;

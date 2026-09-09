@@ -1,7 +1,8 @@
 const { app, BrowserWindow, ipcMain, shell, session } = require('electron');
-const { DEV_TOOLS_ALLOWED, WEB_URL, getMainWindow, getOverlayWindow, createOverlayWindow, createMainWindow } = require('./window');
+const { DEV_TOOLS_ALLOWED, WEB_URL, getMainWindow, getOverlayWindow, createOverlayWindow, createMainWindow, bringToFront } = require('./window');
 const { createTray, destroyTray, setListeningState } = require('./tray');
 const { registerShortcuts } = require('./shortcuts');
+const { SUPPORTED_PLATFORMS, getScreenShareDetector } = require('./screenShareDetector');
 
 /** Applies (or re-applies) launch-at-startup to the OS. Exported so main.js
  * can call it once at boot with whatever was persisted from a previous run,
@@ -72,12 +73,51 @@ function registerIpcHandlers({ logger, settingsStore, getPendingHandoff, clearPe
     if (win) win.minimize();
   });
 
+  ipcMain.on('feonix:hide', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && !win.isDestroyed()) {
+      win.hide();
+    }
+  });
+
+  ipcMain.on('feonix:hide-main-window', () => {
+    const mainWindow = getMainWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.hide();
+    }
+  });
+
+  ipcMain.on('feonix:show', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    const alwaysOnTop = settingsStore ? Boolean(settingsStore.get('alwaysOnTop')) : true;
+    bringToFront(win, alwaysOnTop);
+    try {
+      win.setContentProtection(true);
+    } catch { }
+  });
+
+  ipcMain.on('feonix:bring-to-front', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return;
+    const alwaysOnTop = settingsStore ? Boolean(settingsStore.get('alwaysOnTop')) : true;
+    bringToFront(win, alwaysOnTop);
+  });
+
   ipcMain.on('feonix:resize', (event, width, height) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || !Number.isFinite(width) || !Number.isFinite(height)) return;
     const w = Math.round(Math.max(MIN_WINDOW_DIM, Math.min(MAX_WINDOW_DIM, width)));
     const h = Math.round(Math.max(MIN_WINDOW_DIM, Math.min(MAX_WINDOW_DIM, height)));
     win.setSize(w, h);
+    if (w > 300 && h > 100) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      const alwaysOnTop = settingsStore ? Boolean(settingsStore.get('alwaysOnTop')) : true;
+      bringToFront(win, alwaysOnTop);
+    }
   });
 
   // The renderer's drag-to-move gesture (mousedown on the drag rail, track
@@ -133,17 +173,27 @@ function registerIpcHandlers({ logger, settingsStore, getPendingHandoff, clearPe
 
     // Side effects that only the main process can carry out, applied right
     // when the setting actually changes rather than only at next launch.
-    if (key === 'shortcutToggle' || key === 'shortcutHide') {
+    if (key === 'shortcutToggle' || key === 'shortcutHide' || key === 'shortcutScreenshot'
+      || key === 'shortcutListenToggle' || key === 'shortcutAnswer') {
       registerShortcuts(settingsStore);
     } else if (key === 'launchAtStartup') {
       applyLaunchAtStartup(updated.launchAtStartup);
     } else if (key === 'showTrayIcon') {
-      if (updated.showTrayIcon) createTray({ onOpenSettings: () => {} });
+      if (updated.showTrayIcon) createTray({ onOpenSettings: () => { } });
       else destroyTray();
     } else if (key === 'alwaysOnTop') {
       const win = getOverlayWindow();
       if (win && !win.isDestroyed()) {
         win.setAlwaysOnTop(Boolean(updated.alwaysOnTop), updated.alwaysOnTop ? 'screen-saver' : 'normal');
+      }
+    } else if (key === 'stealthMode') {
+      const win = getOverlayWindow();
+      if (win && !win.isDestroyed()) {
+        try {
+          win.setContentProtection(Boolean(updated.stealthMode));
+        } catch (err) {
+          logger.warn('setContentProtection failed:', err.message);
+        }
       }
     }
 
@@ -162,6 +212,18 @@ function registerIpcHandlers({ logger, settingsStore, getPendingHandoff, clearPe
     const handoff = getPendingHandoff();
     clearPendingHandoff();
     return handoff;
+  });
+
+  // Screen-share stealth & platform detection
+  ipcMain.handle('feonix:get-screen-share-platforms', () => {
+    return SUPPORTED_PLATFORMS;
+  });
+
+  ipcMain.handle('feonix:check-screen-share-active', () => {
+    const detector = getScreenShareDetector();
+    if (!detector) return { active: false, platforms: [] };
+    const activeList = detector.getActivePlatforms();
+    return { active: activeList.length > 0, platforms: activeList };
   });
 
   // --- Privacy & Security panel -------------------------------------------

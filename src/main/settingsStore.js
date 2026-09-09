@@ -7,6 +7,9 @@ const path = require('path');
 const DEFAULT_SETTINGS = {
   shortcutToggle: 'CommandOrControl+Shift+Space',
   shortcutHide: 'CommandOrControl+Shift+H',
+  shortcutScreenshot: 'CommandOrControl+Shift+S',
+  shortcutListenToggle: 'CommandOrControl+Shift+P',
+  shortcutAnswer: 'CommandOrControl+Shift+G',
   startMinimized: false,
   alwaysOnTop: true,
   launchAtStartup: false,
@@ -15,9 +18,13 @@ const DEFAULT_SETTINGS = {
   assistantSize: 'normal',
   rememberPosition: true,
   voiceEnabled: true,
+  stealthMode: true,
+  autoHideOnShare: false,
+  audioSource: 'mic',
 };
 
 const ASSISTANT_SIZES = ['compact', 'normal', 'large'];
+const AUDIO_SOURCES = ['mic', 'tab'];
 
 // A handful of safe presets rather than free-form key capture — the
 // renderer only ever offers these, and the main process re-validates
@@ -34,6 +41,21 @@ const HIDE_SHORTCUT_PRESETS = [
   'CommandOrControl+Shift+H',
   'CommandOrControl+Shift+X',
   'CommandOrControl+Alt+H',
+];
+const SCREENSHOT_SHORTCUT_PRESETS = [
+  'CommandOrControl+Shift+S',
+  'CommandOrControl+Shift+C',
+  'CommandOrControl+Alt+S',
+];
+const LISTEN_TOGGLE_SHORTCUT_PRESETS = [
+  'CommandOrControl+Shift+P',
+  'CommandOrControl+Shift+L',
+  'CommandOrControl+Alt+P',
+];
+const ANSWER_SHORTCUT_PRESETS = [
+  'CommandOrControl+Shift+G',
+  'CommandOrControl+Shift+Enter',
+  'CommandOrControl+Alt+G',
 ];
 
 // Keys a renderer is allowed to touch at all. Settings feed OS-level APIs
@@ -55,16 +77,26 @@ function sanitize(key, value) {
       return SHORTCUT_PRESETS.includes(value) ? value : DEFAULT_SETTINGS.shortcutToggle;
     case 'shortcutHide':
       return HIDE_SHORTCUT_PRESETS.includes(value) ? value : DEFAULT_SETTINGS.shortcutHide;
+    case 'shortcutScreenshot':
+      return SCREENSHOT_SHORTCUT_PRESETS.includes(value) ? value : DEFAULT_SETTINGS.shortcutScreenshot;
+    case 'shortcutListenToggle':
+      return LISTEN_TOGGLE_SHORTCUT_PRESETS.includes(value) ? value : DEFAULT_SETTINGS.shortcutListenToggle;
+    case 'shortcutAnswer':
+      return ANSWER_SHORTCUT_PRESETS.includes(value) ? value : DEFAULT_SETTINGS.shortcutAnswer;
     case 'opacity':
       return clampOpacity(value);
     case 'assistantSize':
       return ASSISTANT_SIZES.includes(value) ? value : DEFAULT_SETTINGS.assistantSize;
+    case 'audioSource':
+      return AUDIO_SOURCES.includes(value) ? value : DEFAULT_SETTINGS.audioSource;
     case 'startMinimized':
     case 'alwaysOnTop':
     case 'launchAtStartup':
     case 'showTrayIcon':
     case 'rememberPosition':
     case 'voiceEnabled':
+    case 'stealthMode':
+    case 'autoHideOnShare':
       return Boolean(value);
     default:
       return value;
@@ -113,4 +145,12 @@ class SettingsStore {
   }
 }
 
-module.exports = { SettingsStore, DEFAULT_SETTINGS, SHORTCUT_PRESETS, HIDE_SHORTCUT_PRESETS };
+module.exports = {
+  SettingsStore,
+  DEFAULT_SETTINGS,
+  SHORTCUT_PRESETS,
+  HIDE_SHORTCUT_PRESETS,
+  SCREENSHOT_SHORTCUT_PRESETS,
+  LISTEN_TOGGLE_SHORTCUT_PRESETS,
+  ANSWER_SHORTCUT_PRESETS,
+};
