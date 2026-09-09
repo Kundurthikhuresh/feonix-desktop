@@ -5,6 +5,10 @@ contextBridge.exposeInMainWorld('feonix', {
   quit: () => ipcRenderer.send('feonix:quit'),
   goToDashboard: () => ipcRenderer.send('feonix:dashboard'),
   minimize: () => ipcRenderer.send('feonix:minimize'),
+  hide: () => ipcRenderer.send('feonix:hide'),
+  hideMainWindow: () => ipcRenderer.send('feonix:hide-main-window'),
+  show: () => ipcRenderer.send('feonix:show'),
+  bringToFront: () => ipcRenderer.send('feonix:bring-to-front'),
   resize: (width, height) => ipcRenderer.send('feonix:resize', width, height),
   moveBy: (dx, dy) => ipcRenderer.send('feonix:move-by', dx, dy),
   startSession: (opts) => ipcRenderer.invoke('feonix:start-session', opts),
@@ -33,9 +37,24 @@ contextBridge.exposeInMainWorld('feonix', {
     return () => ipcRenderer.removeListener('feonix:shortcut-toggle', listener);
   },
   onShortcutHide: (callback) => {
-    const listener = () => callback();
+    const listener = (_event, data) => callback(data);
     ipcRenderer.on('feonix:shortcut-hide', listener);
     return () => ipcRenderer.removeListener('feonix:shortcut-hide', listener);
+  },
+  onShortcutScreenshot: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('feonix:shortcut-screenshot', listener);
+    return () => ipcRenderer.removeListener('feonix:shortcut-screenshot', listener);
+  },
+  onShortcutListenToggle: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('feonix:shortcut-listen-toggle', listener);
+    return () => ipcRenderer.removeListener('feonix:shortcut-listen-toggle', listener);
+  },
+  onShortcutAnswer: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('feonix:shortcut-answer', listener);
+    return () => ipcRenderer.removeListener('feonix:shortcut-answer', listener);
   },
   onTrayShow: (callback) => {
     const listener = () => callback();
@@ -57,6 +76,15 @@ contextBridge.exposeInMainWorld('feonix', {
     ipcRenderer.on('feonix:tray-open-settings', listener);
     return () => ipcRenderer.removeListener('feonix:tray-open-settings', listener);
   },
+
+  // Screen Share Stealth & Platform Detection
+  onScreenShareStateChange: (callback) => {
+    const listener = (_event, data) => callback(data);
+    ipcRenderer.on('feonix:screen-share-detected', listener);
+    return () => ipcRenderer.removeListener('feonix:screen-share-detected', listener);
+  },
+  getScreenSharePlatforms: () => ipcRenderer.invoke('feonix:get-screen-share-platforms'),
+  checkScreenShareActive: () => ipcRenderer.invoke('feonix:check-screen-share-active'),
 });
 
 window.addEventListener('DOMContentLoaded', () => {
